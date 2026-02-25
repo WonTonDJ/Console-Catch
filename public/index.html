@@ -1070,7 +1070,7 @@ function updateTurnHint() {
   if (isMyTurn) {
     h.textContent = !hasDrawn
       ? '👆 Tap DECK or DISCARD PILE to draw, then stage 3 cards to lock a set'
-      : '👆 Stage 3 matching cards → LOCK SET   ·   Or select a card → DISCARD';
+      : '👆 Tap a card to SELECT it → Discard it, or tap it again to STAGE it for a set';
   } else {
     const cur = curState?.players[curState?.currentTurn];
     h.textContent = cur ? `⏳ Waiting for ${cur.avatar} ${cur.name}…` : '⏳ Waiting…';
