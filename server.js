@@ -1,14 +1,6 @@
 /**
- * Console Catch - Multiplayer Game Server
- * Node.js + Socket.io WebSocket Server
- *
- * INSTALL & RUN:
- *   npm install express socket.io
- *   node server.js
- *
- * Then open http://localhost:3000 in your browser.
- * Share your local IP (e.g. http://192.168.1.x:3000) with friends on the same WiFi.
- * For internet play, deploy to Railway, Render, or Fly.io (see README).
+ * Console Catch v2 - Multiplayer Game Server
+ * Node.js + Socket.io
  */
 
 const express = require('express');
@@ -18,13 +10,9 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*' }
-});
-
+const io = new Server(server, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 3000;
 
-// Serve the frontend
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
@@ -32,60 +20,30 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 // GAME DATA
 // ============================================================
 const CONSOLE_SETS = {
-  beige: { name: 'Nintendo', emoji: '🕹️', cards: [
-    { id: 'snes', name: 'SNES', emoji: '🕹️' },
-    { id: 'n64', name: 'N64', emoji: '🎮' },
-    { id: 'switch', name: 'Switch', emoji: '🔋' },
-  ]},
-  green: { name: 'Sony', emoji: '📀', cards: [
-    { id: 'ps1', name: 'PS1', emoji: '📀' },
-    { id: 'psp', name: 'PSP', emoji: '🎯' },
-    { id: 'ps4', name: 'PS4', emoji: '🕹️' },
-  ]},
-  blue: { name: 'Sega', emoji: '💿', cards: [
-    { id: 'saturn', name: 'Saturn', emoji: '🪐' },
-    { id: 'dreamcast', name: 'Dreamcast', emoji: '💫' },
-    { id: 'gamegear', name: 'GameGear', emoji: '💿' },
-  ]},
-  yellow: { name: 'Xbox', emoji: '🟩', cards: [
-    { id: 'xbox', name: 'XBOX', emoji: '🟩' },
-    { id: 'xbox360', name: 'Xbox 360', emoji: '⚙️' },
-    { id: 'xboxone', name: 'Xbox One', emoji: '⬛' },
-  ]},
-  orange: { name: 'Steam', emoji: '🎲', cards: [
-    { id: 'steamdeck', name: 'SteamDeck', emoji: '🎲' },
-    { id: 'steammachine', name: 'Steam Mach.', emoji: '🖥️' },
-    { id: 'steamframe', name: 'Steam Frame', emoji: '🖼️' },
-  ]},
-  grey: { name: 'PC', emoji: '⌨️', cards: [
-    { id: 'keyboard', name: 'Keyboard', emoji: '⌨️' },
-    { id: 'mouse', name: 'Mouse', emoji: '🖱️' },
-    { id: 'gamingpc', name: 'Gaming PC', emoji: '🖥️' },
-  ]},
-  red: { name: 'VR', emoji: '🥽', cards: [
-    { id: 'oculus', name: 'Oculus', emoji: '🥽' },
-    { id: 'metaquest', name: 'Meta Quest', emoji: '🔮' },
-    { id: 'applevr', name: 'Apple VR', emoji: '🍎' },
-  ]},
+  beige:  { name: 'Nintendo', cards: [{ id:'snes',name:'SNES',emoji:'🕹️' },{ id:'n64',name:'N64',emoji:'🎮' },{ id:'switch',name:'Switch',emoji:'🔋' }] },
+  green:  { name: 'Sony',     cards: [{ id:'ps1',name:'PS1',emoji:'📀' },{ id:'psp',name:'PSP',emoji:'🎯' },{ id:'ps4',name:'PS4',emoji:'🕹️' }] },
+  blue:   { name: 'Sega',     cards: [{ id:'saturn',name:'Saturn',emoji:'🪐' },{ id:'dreamcast',name:'Dreamcast',emoji:'💫' },{ id:'gamegear',name:'GameGear',emoji:'💿' }] },
+  yellow: { name: 'Xbox',     cards: [{ id:'xbox',name:'XBOX',emoji:'🟩' },{ id:'xbox360',name:'Xbox 360',emoji:'⚙️' },{ id:'xboxone',name:'Xbox One',emoji:'⬛' }] },
+  orange: { name: 'Steam',    cards: [{ id:'steamdeck',name:'SteamDeck',emoji:'🎲' },{ id:'steammachine',name:'Steam Mach.',emoji:'🖥️' },{ id:'steamframe',name:'Steam Frame',emoji:'🖼️' }] },
+  grey:   { name: 'PC',       cards: [{ id:'keyboard',name:'Keyboard',emoji:'⌨️' },{ id:'mouse',name:'Mouse',emoji:'🖱️' },{ id:'gamingpc',name:'Gaming PC',emoji:'🖥️' }] },
+  red:    { name: 'VR',       cards: [{ id:'oculus',name:'Oculus',emoji:'🥽' },{ id:'metaquest',name:'Meta Quest',emoji:'🔮' },{ id:'applevr',name:'Apple VR',emoji:'🍎' }] },
 };
 
 const AVATARS = ['🐉','🦊','🐺','🦁','🐯','🦄','🐻','🐼','🦅','🦋'];
-const ROOM_CODE_WORDS = ['SNES','PS1','SEGA','XBOX','STEAM','N64','PIXEL','SONIC','MARIO','ZELDA','RETRO','ATARI'];
+const BOT_NAMES = ['RetroBot','PixelBot','NESBot','CassetteBot','DreamBot','ArcadeBot'];
+const ROOM_WORDS = ['SNES','SEGA','XBOX','STEAM','PIXEL','SONIC','MARIO','ZELDA','RETRO','ATARI'];
 
-// In-memory game rooms
-const rooms = {}; // roomCode -> Room
-const socketToRoom = {}; // socketId -> roomCode
+const rooms = {};
+const socketToRoom = {};
 
 // ============================================================
 // HELPERS
 // ============================================================
 function buildDeck() {
-  let cards = [];
+  const cards = [];
   for (const [color, set] of Object.entries(CONSOLE_SETS)) {
     for (const card of set.cards) {
-      for (let i = 0; i < 4; i++) {
-        cards.push({ ...card, color, setName: set.name });
-      }
+      for (let i = 0; i < 4; i++) cards.push({ ...card, color, setName: set.name });
     }
   }
   return shuffle(cards);
@@ -102,162 +60,163 @@ function shuffle(arr) {
 
 function generateRoomCode() {
   let code;
-  do {
-    code = ROOM_CODE_WORDS[Math.floor(Math.random() * ROOM_CODE_WORDS.length)]
-         + Math.floor(Math.random() * 100);
-  } while (rooms[code]);
+  do { code = ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)] + Math.floor(Math.random() * 89 + 10); }
+  while (rooms[code]);
   return code;
 }
 
 function isValidSet(cards) {
-  if (cards.length !== 3) return false;
+  if (!cards || cards.length !== 3) return false;
   if (cards.every(c => c.id === cards[0].id)) return true;
   if (cards.every(c => c.color === cards[0].color)) return true;
   return false;
 }
 
+function makePlayerPublic(p) {
+  return {
+    id: p.id, name: p.name, avatar: p.avatar, isBot: p.isBot || false,
+    cardCount: p.hand.length, lockedSets: p.lockedSets,
+    gold: p.gold, lucky: p.lucky, discardPile: p.discardPile,
+  };
+}
+
 function getRoomPublicState(room) {
   return {
-    roomCode: room.code,
-    phase: room.phase,
-    currentTurn: room.currentTurn,
-    round: room.round,
+    roomCode: room.code, phase: room.phase, hostId: room.hostId,
+    currentTurn: room.currentTurn, round: room.round,
     deckCount: room.deck.length,
     topDiscard: room.discardPile.length > 0 ? room.discardPile[room.discardPile.length - 1] : null,
-    players: room.players.map(p => ({
-      id: p.id,
-      name: p.name,
-      avatar: p.avatar,
-      cardCount: p.hand.length,
-      setsComplete: p.sets.filter(s => s.length === 3 && isValidSet(s)).length,
-      gold: p.gold,
-      lucky: p.lucky,
-      // Only send discard pile (visible to others via Q)
-      discardPile: p.discardPile,
-    })),
+    players: room.players.map(makePlayerPublic),
   };
 }
 
 // ============================================================
 // ROOM MANAGEMENT
 // ============================================================
-function createRoom(hostSocket, playerName) {
+function makePlayer(id, name, avatar, isBot) {
+  return {
+    id, name, avatar, isBot: isBot || false,
+    hand: [], sets: [[], [], []],
+    lockedSets: 0, lockedSetCards: [[], [], []],
+    discardPile: [], gold: 0, lucky: 0, hasDrawn: false,
+  };
+}
+
+function createRoom(socket, playerName) {
   const code = generateRoomCode();
   const room = {
-    code,
-    phase: 'waiting',
-    hostId: hostSocket.id,
-    players: [],
-    deck: [],
-    discardPile: [],
-    currentTurn: 0,
-    round: 1,
-    timerTimeout: null,
+    code, phase: 'waiting', hostId: socket.id,
+    players: [], deck: [], discardPile: [],
+    currentTurn: 0, round: 1, timerTimeout: null,
   };
   rooms[code] = room;
-  addPlayerToRoom(room, hostSocket, playerName);
+  const player = makePlayer(socket.id, playerName, AVATARS[0], false);
+  room.players.push(player);
+  socketToRoom[socket.id] = code;
+  socket.join(code);
   return room;
 }
 
-function addPlayerToRoom(room, socket, playerName) {
-  const player = {
-    id: socket.id,
-    name: playerName,
-    avatar: AVATARS[room.players.length % AVATARS.length],
-    hand: [],
-    sets: [[], [], []],
-    discardPile: [],
-    gold: 0,
-    lucky: 0,
-    hasDrawn: false,
-  };
+function joinRoom(socket, room, playerName) {
+  const avatar = AVATARS[room.players.length % AVATARS.length];
+  const player = makePlayer(socket.id, playerName, avatar, false);
   room.players.push(player);
   socketToRoom[socket.id] = room.code;
   socket.join(room.code);
   return player;
 }
 
-function getPlayer(room, socketId) {
-  return room.players.find(p => p.id === socketId);
+function addBot(room) {
+  const used = new Set(room.players.map(p => p.name));
+  const name = BOT_NAMES.find(n => !used.has(n)) || `Bot${room.players.length}`;
+  const avatar = AVATARS[room.players.length % AVATARS.length];
+  const bot = makePlayer(`bot_${Date.now()}`, name, avatar, true);
+  room.players.push(bot);
+  return bot;
 }
+
+function removeBot(room) {
+  for (let i = room.players.length - 1; i >= 0; i--) {
+    if (room.players[i].isBot) { room.players.splice(i, 1); return true; }
+  }
+  return false;
+}
+
+function getPlayer(room, id) { return room.players.find(p => p.id === id); }
 
 // ============================================================
 // GAME LOGIC
 // ============================================================
-function startGameInRoom(room) {
+function startGame(room) {
   room.phase = 'playing';
   room.deck = buildDeck();
   room.discardPile = [];
   room.currentTurn = 0;
   room.round = 1;
-
-  // Deal 8 cards to each player
-  for (const player of room.players) {
-    player.hand = [];
-    player.sets = [[], [], []];
-    player.discardPile = [];
-    player.hasDrawn = false;
-    for (let i = 0; i < 8; i++) {
-      if (room.deck.length > 0) player.hand.push(room.deck.pop());
-    }
+  for (const p of room.players) {
+    p.hand = []; p.sets = [[], [], []];
+    p.lockedSets = 0; p.lockedSetCards = [[], [], []];
+    p.discardPile = []; p.hasDrawn = false;
+    for (let i = 0; i < 8; i++) { if (room.deck.length > 0) p.hand.push(room.deck.pop()); }
   }
-
-  // First discard
   if (room.deck.length > 0) room.discardPile.push(room.deck.pop());
-
-  // Send each player their private hand + public state
-  broadcastGameState(room);
-  room.players.forEach(p => {
-    io.to(p.id).emit('your_hand', {
-      hand: p.hand,
-      sets: p.sets,
-      hasDrawn: p.hasDrawn,
-    });
-  });
-
-  io.to(room.code).emit('game_started', { message: '🎮 Game has started!' });
-  startTurnTimer(room);
+  broadcastState(room);
+  pushHands(room);
+  io.to(room.code).emit('game_started', {});
+  scheduleTurn(room);
 }
 
-function broadcastGameState(room) {
+function broadcastState(room) {
   io.to(room.code).emit('game_state', getRoomPublicState(room));
 }
 
-function startTurnTimer(room) {
+function pushHands(room) {
+  room.players.forEach(p => {
+    if (!p.isBot) {
+      io.to(p.id).emit('your_hand', {
+        hand: p.hand, sets: p.sets,
+        lockedSets: p.lockedSets, lockedSetCards: p.lockedSetCards,
+        hasDrawn: p.hasDrawn,
+      });
+    }
+  });
+}
+
+function scheduleTurn(room) {
   if (room.timerTimeout) clearTimeout(room.timerTimeout);
-  const currentPlayer = room.players[room.currentTurn];
-  if (!currentPlayer) return;
-
-  io.to(room.code).emit('timer_start', { seconds: 30, playerId: currentPlayer.id });
-
+  const cur = room.players[room.currentTurn];
+  if (!cur || room.phase !== 'playing') return;
+  io.to(room.code).emit('timer_start', { seconds: 30, playerId: cur.id });
+  const delay = cur.isBot ? (1500 + Math.random() * 1000) : 30000;
   room.timerTimeout = setTimeout(() => {
-    console.log(`[${room.code}] Timer expired for ${currentPlayer.name}`);
-    forceMove(room, currentPlayer);
-  }, 30000);
+    if (room.phase !== 'playing') return;
+    if (cur.isBot) doBotTurn(room, cur);
+    else forceMove(room, cur);
+  }, delay);
+}
+
+function nextTurn(room) {
+  if (room.phase !== 'playing') return;
+  room.currentTurn = (room.currentTurn + 1) % room.players.length;
+  room.round++;
+  room.players[room.currentTurn].hasDrawn = false;
+  broadcastState(room);
+  pushHands(room);
+  scheduleTurn(room);
 }
 
 function forceMove(room, player) {
-  // Force draw if not drawn
   if (!player.hasDrawn) {
-    if (room.deck.length > 0) {
-      player.hand.push(room.deck.pop());
-    } else if (room.discardPile.length > 1) {
-      reshuffleDeck(room);
-      if (room.deck.length > 0) player.hand.push(room.deck.pop());
-    }
-    player.hasDrawn = true;
+    if (room.deck.length === 0) reshuffleDeck(room);
+    if (room.deck.length > 0) { player.hand.push(room.deck.pop()); player.hasDrawn = true; }
   }
-
-  // Force discard random card
   if (player.hand.length > 0) {
-    const idx = Math.floor(Math.random() * player.hand.length);
-    const card = player.hand.splice(idx, 1)[0];
-    player.discardPile.push(card);
-    room.discardPile.push(card);
+    const card = player.hand.splice(Math.floor(Math.random() * player.hand.length), 1)[0];
+    player.discardPile.push(card); room.discardPile.push(card);
   }
-
-  io.to(player.id).emit('force_move', { message: '⏰ Time expired! Auto-move made.' });
-  advanceTurn(room);
+  if (!player.isBot) io.to(player.id).emit('force_move', {});
+  broadcastState(room);
+  nextTurn(room);
 }
 
 function reshuffleDeck(room) {
@@ -268,240 +227,237 @@ function reshuffleDeck(room) {
   io.to(room.code).emit('deck_reshuffled', {});
 }
 
-function advanceTurn(room) {
-  room.currentTurn = (room.currentTurn + 1) % room.players.length;
-  room.round++;
-
-  const nextPlayer = room.players[room.currentTurn];
-  nextPlayer.hasDrawn = false;
-
-  broadcastGameState(room);
-  room.players.forEach(p => {
-    io.to(p.id).emit('your_hand', {
-      hand: p.hand,
-      sets: p.sets,
-      hasDrawn: p.hasDrawn,
+function tryWin(room, player) {
+  if (player.lockedSets >= 3) {
+    if (room.timerTimeout) clearTimeout(room.timerTimeout);
+    room.phase = 'ended';
+    const gold = 120 + Math.floor(Math.random() * 80);
+    const lucky = Math.random() < 0.7 ? Math.floor(Math.random() * 15) + 5 : 0;
+    player.gold += gold; player.lucky += lucky;
+    const scores = room.players.map(p => ({
+      id: p.id, name: p.name, avatar: p.avatar, isBot: p.isBot,
+      gold: p.gold, lucky: p.lucky, lockedSets: p.lockedSets,
+    })).sort((a, b) => b.lockedSets - a.lockedSets || b.gold - a.gold);
+    io.to(room.code).emit('game_over', {
+      winner: { id: player.id, name: player.name, avatar: player.avatar },
+      goldEarned: gold, luckyEarned: lucky, finalScores: scores,
     });
-  });
-
-  startTurnTimer(room);
-}
-
-function checkWinCondition(room, player) {
-  const completeSets = player.sets.filter(s => s.length === 3 && isValidSet(s));
-  if (completeSets.length >= 3 && player.hand.length === 0) {
     return true;
   }
   return false;
 }
 
-function triggerWin(room, winner) {
-  if (room.timerTimeout) clearTimeout(room.timerTimeout);
-  room.phase = 'ended';
+// ============================================================
+// BOT AI
+// ============================================================
+function doBotTurn(room, bot) {
+  if (room.phase !== 'playing') return;
+  // Draw
+  if (room.deck.length === 0) reshuffleDeck(room);
+  if (room.deck.length > 0) { bot.hand.push(room.deck.pop()); bot.hasDrawn = true; }
 
-  const goldEarned = 120 + Math.floor(Math.random() * 80);
-  const luckyEarned = Math.random() < 0.7 ? Math.floor(Math.random() * 15) + 5 : 0;
+  // Attempt to lock sets
+  botTryLockSets(room, bot);
+  if (room.phase !== 'playing') return;
 
-  winner.gold += goldEarned;
-  winner.lucky += luckyEarned;
+  // Discard
+  if (bot.hand.length > 0) {
+    const di = botPickDiscard(bot);
+    const card = bot.hand.splice(di, 1)[0];
+    bot.discardPile.push(card); room.discardPile.push(card);
+  }
+  broadcastState(room);
+  nextTurn(room);
+}
 
-  const finalScores = room.players.map(p => ({
-    id: p.id,
-    name: p.name,
-    avatar: p.avatar,
-    gold: p.gold,
-    lucky: p.lucky,
-    setsComplete: p.sets.filter(s => isValidSet(s)).length,
-  })).sort((a, b) => b.gold - a.gold);
-
-  io.to(room.code).emit('game_over', {
-    winner: {
-      id: winner.id,
-      name: winner.name,
-      avatar: winner.avatar,
-    },
-    goldEarned,
-    luckyEarned,
-    finalScores,
+function botTryLockSets(room, bot) {
+  if (bot.lockedSets >= 3) return;
+  const allCards = [...bot.hand];
+  const byId = {}, byColor = {};
+  allCards.forEach(c => {
+    if (!byId[c.id]) byId[c.id] = [];    byId[c.id].push(c);
+    if (!byColor[c.color]) byColor[c.color] = []; byColor[c.color].push(c);
   });
+  const used = new Set();
+
+  const tryLock = (candidates) => {
+    if (bot.lockedSets >= 3) return;
+    const avail = candidates.filter(c => !used.has(c));
+    if (avail.length >= 3 && isValidSet(avail.slice(0,3))) {
+      const triple = avail.slice(0,3);
+      const slot = bot.lockedSets;
+      bot.lockedSetCards[slot] = triple;
+      bot.lockedSets++;
+      triple.forEach(c => used.add(c));
+      bot.hand = bot.hand.filter(c => !used.has(c));
+      broadcastState(room);
+      if (tryWin(room, bot)) return;
+    }
+  };
+  for (const cards of Object.values(byId)) tryLock(cards);
+  for (const cards of Object.values(byColor)) tryLock(cards);
+}
+
+function botPickDiscard(bot) {
+  const colorCount = {}, idCount = {};
+  bot.hand.forEach(c => { colorCount[c.color]=(colorCount[c.color]||0)+1; idCount[c.id]=(idCount[c.id]||0)+1; });
+  let worst = 0, worstScore = Infinity;
+  bot.hand.forEach((c, i) => {
+    const s = Math.max(colorCount[c.color]||0, idCount[c.id]||0);
+    if (s < worstScore) { worstScore = s; worst = i; }
+  });
+  return worst;
 }
 
 // ============================================================
 // SOCKET EVENTS
 // ============================================================
 io.on('connection', (socket) => {
-  console.log(`[+] Connected: ${socket.id}`);
+  console.log(`[+] ${socket.id}`);
 
-  // HOST
   socket.on('host_game', ({ playerName }) => {
     if (!playerName?.trim()) return socket.emit('error', { message: 'Name required' });
     const room = createRoom(socket, playerName.trim());
-    socket.emit('room_created', {
-      roomCode: room.code,
-      player: getPlayer(room, socket.id),
-    });
-    broadcastGameState(room);
-    console.log(`[${room.code}] Hosted by ${playerName}`);
+    socket.emit('room_created', { roomCode: room.code });
+    broadcastState(room);
   });
 
-  // JOIN
   socket.on('join_game', ({ playerName, roomCode }) => {
     const code = roomCode?.trim().toUpperCase();
     if (!playerName?.trim()) return socket.emit('error', { message: 'Name required' });
     const room = rooms[code];
     if (!room) return socket.emit('error', { message: `Room "${code}" not found` });
-    if (room.phase !== 'waiting') return socket.emit('error', { message: 'Game already in progress' });
-    if (room.players.length >= 6) return socket.emit('error', { message: 'Room is full (max 6)' });
-
-    addPlayerToRoom(room, socket, playerName.trim());
-    const player = getPlayer(room, socket.id);
-    socket.emit('room_joined', { roomCode: code, player });
-    broadcastGameState(room);
-    io.to(room.code).emit('player_joined', { name: playerName.trim(), avatar: player.avatar });
-    console.log(`[${code}] ${playerName} joined`);
+    if (room.phase !== 'waiting') return socket.emit('error', { message: 'Game already started' });
+    if (room.players.filter(p => !p.isBot).length >= 6) return socket.emit('error', { message: 'Room is full (max 6)' });
+    const player = joinRoom(socket, room, playerName.trim());
+    socket.emit('room_joined', { roomCode: code });
+    broadcastState(room);
+    io.to(room.code).emit('player_joined', { name: player.name, avatar: player.avatar });
   });
 
-  // START GAME
+  socket.on('leave_room', () => { handleLeave(socket); socket.emit('left_room', {}); });
+
+  socket.on('add_bot', () => {
+    const room = rooms[socketToRoom[socket.id]];
+    if (!room || room.phase !== 'waiting' || room.hostId !== socket.id) return;
+    if (room.players.length >= 6) return socket.emit('error', { message: 'Room is full' });
+    const bot = addBot(room);
+    broadcastState(room);
+    io.to(room.code).emit('player_joined', { name: bot.name, avatar: bot.avatar, isBot: true });
+  });
+
+  socket.on('remove_bot', () => {
+    const room = rooms[socketToRoom[socket.id]];
+    if (!room || room.phase !== 'waiting' || room.hostId !== socket.id) return;
+    if (removeBot(room)) broadcastState(room);
+  });
+
   socket.on('start_game', () => {
-    const roomCode = socketToRoom[socket.id];
-    const room = rooms[roomCode];
-    if (!room) return;
-    if (room.hostId !== socket.id) return socket.emit('error', { message: 'Only host can start' });
-    if (room.players.length < 2) return socket.emit('error', { message: 'Need at least 2 players' });
-    startGameInRoom(room);
-    console.log(`[${roomCode}] Game started with ${room.players.length} players`);
+    const room = rooms[socketToRoom[socket.id]];
+    if (!room || room.hostId !== socket.id) return;
+    if (room.players.length < 2) return socket.emit('error', { message: 'Need at least 2 players — add a bot!' });
+    startGame(room);
   });
 
-  // DRAW FROM DECK
   socket.on('draw_deck', () => {
-    const roomCode = socketToRoom[socket.id];
-    const room = rooms[roomCode];
+    const room = rooms[socketToRoom[socket.id]];
     if (!room || room.phase !== 'playing') return;
     const player = getPlayer(room, socket.id);
-    if (!player || room.players[room.currentTurn].id !== socket.id) return;
-    if (player.hasDrawn) return socket.emit('error', { message: 'Already drew this turn' });
-
+    if (!player || room.players[room.currentTurn].id !== socket.id || player.hasDrawn) return;
     if (room.deck.length === 0) reshuffleDeck(room);
     if (room.deck.length === 0) return socket.emit('error', { message: 'No cards left!' });
-
-    const card = room.deck.pop();
-    player.hand.push(card);
-    player.hasDrawn = true;
-
-    socket.emit('card_drawn', { card, source: 'deck' });
-    socket.emit('your_hand', { hand: player.hand, sets: player.sets, hasDrawn: true });
-    broadcastGameState(room);
-  });
-
-  // DRAW FROM DISCARD
-  socket.on('draw_discard', () => {
-    const roomCode = socketToRoom[socket.id];
-    const room = rooms[roomCode];
-    if (!room || room.phase !== 'playing') return;
-    const player = getPlayer(room, socket.id);
-    if (!player || room.players[room.currentTurn].id !== socket.id) return;
-    if (player.hasDrawn) return socket.emit('error', { message: 'Already drew this turn' });
-    if (room.discardPile.length === 0) return socket.emit('error', { message: 'Discard pile empty' });
-
-    const card = room.discardPile.pop();
-    player.hand.push(card);
-    player.hasDrawn = true;
-
-    socket.emit('card_drawn', { card, source: 'discard' });
-    socket.emit('your_hand', { hand: player.hand, sets: player.sets, hasDrawn: true });
-    broadcastGameState(room);
-  });
-
-  // DISCARD CARD
-  socket.on('discard_card', ({ handIndex }) => {
-    const roomCode = socketToRoom[socket.id];
-    const room = rooms[roomCode];
-    if (!room || room.phase !== 'playing') return;
-    const player = getPlayer(room, socket.id);
-    if (!player || room.players[room.currentTurn].id !== socket.id) return;
-    if (!player.hasDrawn) return socket.emit('error', { message: 'Draw a card first' });
-    if (handIndex < 0 || handIndex >= player.hand.length) return socket.emit('error', { message: 'Invalid card' });
-
     if (room.timerTimeout) clearTimeout(room.timerTimeout);
-
-    const card = player.hand.splice(handIndex, 1)[0];
-    player.discardPile.push(card);
-    room.discardPile.push(card);
-
-    // Check win
-    if (checkWinCondition(room, player)) {
-      broadcastGameState(room);
-      triggerWin(room, player);
-      return;
-    }
-
-    advanceTurn(room);
+    const card = room.deck.pop(); player.hand.push(card); player.hasDrawn = true;
+    // Reset timer for discard phase
+    room.timerTimeout = setTimeout(() => forceMove(room, player), 30000);
+    io.to(room.code).emit('timer_start', { seconds: 30, playerId: player.id });
+    socket.emit('card_drawn', { card, source: 'deck' });
+    socket.emit('your_hand', { hand: player.hand, sets: player.sets, lockedSets: player.lockedSets, lockedSetCards: player.lockedSetCards, hasDrawn: true });
+    broadcastState(room);
   });
 
-  // UPDATE SETS (player arranges their sets locally and syncs)
-  socket.on('update_sets', ({ sets, hand }) => {
-    const roomCode = socketToRoom[socket.id];
-    const room = rooms[roomCode];
+  socket.on('draw_discard', () => {
+    const room = rooms[socketToRoom[socket.id]];
+    if (!room || room.phase !== 'playing') return;
+    const player = getPlayer(room, socket.id);
+    if (!player || room.players[room.currentTurn].id !== socket.id || player.hasDrawn) return;
+    if (room.discardPile.length === 0) return socket.emit('error', { message: 'Discard pile empty' });
+    if (room.timerTimeout) clearTimeout(room.timerTimeout);
+    const card = room.discardPile.pop(); player.hand.push(card); player.hasDrawn = true;
+    room.timerTimeout = setTimeout(() => forceMove(room, player), 30000);
+    io.to(room.code).emit('timer_start', { seconds: 30, playerId: player.id });
+    socket.emit('card_drawn', { card, source: 'discard' });
+    socket.emit('your_hand', { hand: player.hand, sets: player.sets, lockedSets: player.lockedSets, lockedSetCards: player.lockedSetCards, hasDrawn: true });
+    broadcastState(room);
+  });
+
+  socket.on('discard_card', ({ handIndex }) => {
+    const room = rooms[socketToRoom[socket.id]];
+    if (!room || room.phase !== 'playing') return;
+    const player = getPlayer(room, socket.id);
+    if (!player || room.players[room.currentTurn].id !== socket.id || !player.hasDrawn) return;
+    if (handIndex < 0 || handIndex >= player.hand.length) return socket.emit('error', { message: 'Invalid card' });
+    if (room.timerTimeout) clearTimeout(room.timerTimeout);
+    const card = player.hand.splice(handIndex, 1)[0];
+    player.discardPile.push(card); room.discardPile.push(card);
+    broadcastState(room);
+    nextTurn(room);
+  });
+
+  // Lock a verified set into a slot
+  socket.on('lock_set', ({ slotIndex, cards }) => {
+    const room = rooms[socketToRoom[socket.id]];
     if (!room || room.phase !== 'playing') return;
     const player = getPlayer(room, socket.id);
     if (!player) return;
+    if (slotIndex < 0 || slotIndex > 2) return socket.emit('error', { message: 'Invalid slot' });
+    if (player.lockedSetCards[slotIndex].length > 0) return socket.emit('error', { message: 'Slot already locked!' });
+    if (!cards || cards.length !== 3) return socket.emit('error', { message: 'Select exactly 3 cards' });
+    if (!isValidSet(cards)) return socket.emit('error', { message: '❌ Not a valid set! Need 3 identical or 3 same-color.' });
 
-    // Validate: total cards must match
-    const totalNew = sets.flat().length + hand.length;
-    const totalOld = player.sets.flat().length + player.hand.length;
-    if (totalNew !== totalOld) return; // prevent cheating
-
-    player.sets = sets;
-    player.hand = hand;
-    socket.emit('your_hand', { hand: player.hand, sets: player.sets, hasDrawn: player.hasDrawn });
-    broadcastGameState(room);
-  });
-
-  // DISCONNECT
-  socket.on('disconnect', () => {
-    const roomCode = socketToRoom[socket.id];
-    if (roomCode && rooms[roomCode]) {
-      const room = rooms[roomCode];
-      const playerIdx = room.players.findIndex(p => p.id === socket.id);
-      const player = room.players[playerIdx];
-
-      if (player) {
-        console.log(`[${roomCode}] ${player.name} disconnected`);
-        io.to(roomCode).emit('player_left', { name: player.name, avatar: player.avatar });
-        room.players.splice(playerIdx, 1);
-      }
-
-      if (room.players.length === 0) {
-        if (room.timerTimeout) clearTimeout(room.timerTimeout);
-        delete rooms[roomCode];
-        console.log(`[${roomCode}] Room deleted (empty)`);
-      } else {
-        // If host left, assign new host
-        if (room.hostId === socket.id) {
-          room.hostId = room.players[0].id;
-          io.to(room.hostId).emit('you_are_host', {});
-        }
-        // Fix turn index if needed
-        if (room.phase === 'playing') {
-          if (room.currentTurn >= room.players.length) {
-            room.currentTurn = 0;
-          }
-          broadcastGameState(room);
-        } else {
-          broadcastGameState(room);
-        }
-      }
+    // Verify cards are in player hand
+    const handCopy = [...player.hand];
+    for (const c of cards) {
+      const idx = handCopy.findIndex(h => h.id === c.id && h.color === c.color);
+      if (idx === -1) return socket.emit('error', { message: 'Card not found in your hand' });
+      handCopy.splice(idx, 1);
     }
-    delete socketToRoom[socket.id];
-    console.log(`[-] Disconnected: ${socket.id}`);
+    player.hand = handCopy;
+    player.lockedSetCards[slotIndex] = cards;
+    player.lockedSets++;
+
+    socket.emit('your_hand', { hand: player.hand, sets: player.sets, lockedSets: player.lockedSets, lockedSetCards: player.lockedSetCards, hasDrawn: player.hasDrawn });
+    socket.emit('set_locked', { slotIndex, cards, lockedSets: player.lockedSets });
+    broadcastState(room);
+    tryWin(room, player);
   });
+
+  socket.on('disconnect', () => { handleLeave(socket); console.log(`[-] ${socket.id}`); });
 });
 
-// ============================================================
-// START
-// ============================================================
-server.listen(PORT, () => {
-  console.log(`\n🎮 Console Catch Server running at http://localhost:${PORT}`);
-  console.log(`📱 Share with friends on same WiFi: http://<YOUR_IP>:${PORT}`);
-  console.log(`🌍 For internet play, see README.md\n`);
-});
+function handleLeave(socket) {
+  const code = socketToRoom[socket.id];
+  if (!code || !rooms[code]) return;
+  const room = rooms[code];
+  const idx = room.players.findIndex(p => p.id === socket.id);
+  if (idx === -1) { delete socketToRoom[socket.id]; return; }
+  const player = room.players[idx];
+  io.to(code).emit('player_left', { name: player.name, avatar: player.avatar });
+  room.players.splice(idx, 1);
+  delete socketToRoom[socket.id];
+
+  if (room.players.filter(p => !p.isBot).length === 0) {
+    if (room.timerTimeout) clearTimeout(room.timerTimeout);
+    delete rooms[code]; return;
+  }
+  if (room.hostId === socket.id) {
+    const newHost = room.players.find(p => !p.isBot);
+    if (newHost) { room.hostId = newHost.id; io.to(newHost.id).emit('you_are_host', {}); }
+  }
+  if (room.phase === 'playing') {
+    if (room.currentTurn >= room.players.length) room.currentTurn = 0;
+  }
+  broadcastState(room);
+}
+
+server.listen(PORT, () => console.log(`\n🎮 Console Catch v2 at http://localhost:${PORT}\n`));
