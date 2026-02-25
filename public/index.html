@@ -1014,10 +1014,18 @@ function renderHand() {
   myHand.forEach((card, i) => {
     const isSel    = selectedIdx === i;
     const isStaged = stagedCards.some(s => s._hi === i);
+    const canTap   = isMyTurn && hasDrawn;
     const el = document.createElement('div');
-    el.className = `card card-${card.color}${isMyTurn ? ' hov' : ''}${isSel ? ' sel' : ''}${isStaged ? ' staged' : ''}`;
+    el.className = [
+      'card',
+      `card-${card.color}`,
+      canTap && !isStaged ? 'hov' : '',
+      isSel    ? 'sel'    : '',
+      isStaged ? 'staged' : '',
+      !canTap  ? 'off'    : '',
+    ].filter(Boolean).join(' ');
     el.innerHTML = `<div class="cem">${card.emoji}</div><div class="cnm">${card.name}</div>`;
-    el.onclick = () => handleCardTap(i);
+    if (canTap) el.onclick = () => handleCardTap(i);
     c.appendChild(el);
   });
 }
@@ -1069,8 +1077,8 @@ function updateTurnHint() {
   const h = document.getElementById('turnHint');
   if (isMyTurn) {
     h.textContent = !hasDrawn
-      ? '👆 Tap DECK or DISCARD PILE to draw, then stage 3 cards to lock a set'
-      : '👆 Tap a card to SELECT it → Discard it, or tap it again to STAGE it for a set';
+      ? '👆 Tap the DECK or DISCARD PILE to draw a card first'
+      : '👆 Tap any card once to SELECT it → hit DISCARD   ·   Tap it twice to STAGE it for a set';
   } else {
     const cur = curState?.players[curState?.currentTurn];
     h.textContent = cur ? `⏳ Waiting for ${cur.avatar} ${cur.name}…` : '⏳ Waiting…';
@@ -1097,25 +1105,25 @@ function updateTableState() {
 // CARD INTERACTIONS
 // ─────────────────────────────────────────────
 function handleCardTap(idx) {
-  if (!isMyTurn || !hasDrawn) return; // can only interact after drawing
+  if (!isMyTurn || !hasDrawn) return;
 
   const alreadyStaged = stagedCards.findIndex(s => s._hi === idx);
 
   if (alreadyStaged !== -1) {
-    // Already staged — tap again to unstage it
+    // Tapped a staged card — unstage it
     stagedCards.splice(alreadyStaged, 1);
     renderHand(); renderStage(); updateButtons();
     return;
   }
 
   if (selectedIdx === idx) {
-    // Already selected for discard — tap again to stage it instead
+    // Tapped the already-selected card a second time — move it to stage
     if (stagedCards.length < 3) {
       stagedCards.push({ ...myHand[idx], _hi: idx });
-      selectedIdx = null;
     }
+    selectedIdx = null;
   } else {
-    // Fresh tap — select for discard (single tap = discard intent)
+    // Fresh tap on any card — select it for discard (enables Discard button)
     selectedIdx = idx;
   }
 
