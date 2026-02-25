@@ -1097,21 +1097,28 @@ function updateTableState() {
 // CARD INTERACTIONS
 // ─────────────────────────────────────────────
 function handleCardTap(idx) {
-  if (!isMyTurn) return;
+  if (!isMyTurn || !hasDrawn) return; // can only interact after drawing
+
   const alreadyStaged = stagedCards.findIndex(s => s._hi === idx);
 
   if (alreadyStaged !== -1) {
-    // Remove from stage
+    // Already staged — tap again to unstage it
     stagedCards.splice(alreadyStaged, 1);
-    selectedIdx = null;
-  } else if (stagedCards.length < 3) {
-    // Add to stage
-    stagedCards.push({ ...myHand[idx], _hi: idx });
-    selectedIdx = null;
-  } else {
-    // Stage is full — treat as discard selection toggle
-    selectedIdx = selectedIdx === idx ? null : idx;
+    renderHand(); renderStage(); updateButtons();
+    return;
   }
+
+  if (selectedIdx === idx) {
+    // Already selected for discard — tap again to stage it instead
+    if (stagedCards.length < 3) {
+      stagedCards.push({ ...myHand[idx], _hi: idx });
+      selectedIdx = null;
+    }
+  } else {
+    // Fresh tap — select for discard (single tap = discard intent)
+    selectedIdx = idx;
+  }
+
   renderHand(); renderStage(); updateButtons();
 }
 
