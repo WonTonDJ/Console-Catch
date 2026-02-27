@@ -917,44 +917,98 @@ socket.on('game_started', () => {
 });
 
 socket.on('your_hand', ({ hand, sets, lockedSets, lockedSetCards, hasDrawn: hd }) => {
-  myHand = hand; mySets = sets;
-  myLockedSets = lockedSets; myLockedSetCards = lockedSetCards;
-  hasDrawn = hd;
-  // Remove staged cards no longer in hand
+  myHand           = hand;
+  mySets           = sets;
+  myLockedSets     = lockedSets;
+  myLockedSetCards = lockedSetCards;
+  hasDrawn         = hd;
+
+  // Clear any staged cards that are no longer in hand
   stagedCards = stagedCards.filter(sc =>
     myHand.some(c => c.id === sc.id && c.color === sc.color)
   );
-  renderHand(); renderSets(); renderStage(); updateButtons();
+  // Clear selected index — hand may have changed
+  selectedIdx = null;
+
+  // Auto-detect and highlight any complete sets in hand
+  autoDetectSets();
+
+  renderAll();
 });
 
 socket.on('set_locked', ({ slotIndex, lockedSets }) => {
   myLockedSets = lockedSets;
   stagedCards  = [];
+  selectedIdx  = null;
   document.getElementById('lockCnt').textContent = lockedSets;
-  notif(`🔒 Set ${slotIndex + 1} locked! (${lockedSets}/3)`);
-  renderStage(); updateButtons();
+  notif(`🔒 Set ${slotIndex + 1} locked in! (${lockedSets}/3)`);
+  renderAll();
 });
 
 socket.on('timer_start', ({ seconds, playerId }) => {
-  timerSecs  = seconds;
-  isMyTurn   = (playerId === myId);
+  isMyTurn = (playerId === myId);
   startTimerUI(seconds);
-  updateTurnHint(); updateButtons(); updateTableState();
+  updateTurnHint();
+  updateButtons();
+  updateTableState();
+  renderHand(); // re-render so cards go active/inactive correctly
 });
 
-socket.on('card_drawn',    ({ card, source }) => notif(`${card.emoji} ${card.name} drawn from ${source}!`, 1600));
-socket.on('force_move',    () => notif('⏰ Time expired! Auto-move made.'));
+socket.on('card_drawn', ({ card, source }) => {
+  // hasDrawn will be updated via your_hand — just show notification
+  notif(`${card.emoji} ${card.name} drawn from ${source}!`, 1800);
+});
+socket.on('force_move',      () => notif('⏰ Time expired! Auto-move made.'));
 socket.on('deck_reshuffled', () => notif('🔄 Deck reshuffled from discard pile!'));
 
 // ─────────────────────────────────────────────
-// RENDER GAME
+// AUTO-DETECT SETS IN HAND
+// Finds the first valid set of 3 in the player's
+// hand and pre-stages it so they just hit LOCK SET
+// ─────────────────────────────────────────────
+function autoDetectSets() {
+  if (!isMyTurn || myLockedSets >= 3) return;
+  if (stagedCards.length > 0) return; // don't override if player already staging
+
+  const pool = myHand.map((c, i) => ({ ...c, _hi: i }));
+  const byId    = {};
+  const byColor = {};
+
+  pool.forEach(c => {
+    (byId[c.id]       = byId[c.id]       || []).push(c);
+    (byColor[c.color] = byColor[c.color] || []).push(c);
+  });
+
+  // Try identical first, then same-color
+  for (const group of [...Object.values(byId), ...Object.values(byColor)]) {
+    if (group.length >= 3 && isValidSet(group.slice(0, 3))) {
+      stagedCards = group.slice(0, 3);
+      notif('✅ Complete set detected in your hand! Tap LOCK SET to confirm.', 3000);
+      return;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// RENDER ALL
+// ─────────────────────────────────────────────
+function renderAll() {
+  renderHand();
+  renderSets();
+  renderStage();
+  updateButtons();
+  updateTurnHint();
+}
+
+// ─────────────────────────────────────────────
+// RENDER GAME STATE (from server broadcast)
 // ─────────────────────────────────────────────
 function renderGameState(state) {
   if (!state) return;
-  document.getElementById('rndNum').textContent = state.round || 1;
+  document.getElementById('rndNum').textContent  = state.round || 1;
   document.getElementById('deckCnt').textContent = `${state.deckCount} cards`;
 
-  // Top discard
+  // Top discard pile card
   const dEl = document.getElementById('discardTop');
   if (state.topDiscard) {
     const d = state.topDiscard;
@@ -966,11 +1020,14 @@ function renderGameState(state) {
   }
 
   // Turn badge
-  const cur   = state.players[state.currentTurn];
+  const cur    = state.players[state.currentTurn];
   const myTurn = cur && cur.id === myId;
-  const tb    = document.getElementById('turnBadge');
-  if (myTurn) { tb.textContent = '⚡ YOUR TURN'; tb.style.color = 'var(--green)'; }
-  else if (cur) { tb.textContent = `${cur.avatar} ${cur.name}`; tb.style.color = 'rgba(255,255,255,.45)'; }
+  const tb     = document.getElementById('turnBadge');
+  if (myTurn) {
+    tb.textContent = '⚡ YOUR TURN'; tb.style.color = 'var(--green)';
+  } else if (cur) {
+    tb.textContent = `${cur.avatar} ${cur.name}`; tb.style.color = 'rgba(255,255,255,.45)';
+  }
 
   // My stats
   const me = state.players.find(p => p.id === myId);
@@ -1007,26 +1064,47 @@ function renderOpponents(state) {
   });
 }
 
+// ─────────────────────────────────────────────
+// RENDER HAND
+// Cards are greyed out before drawing.
+// After drawing: tap once = SELECT (gold border,
+// enables DISCARD button). Tap selected again =
+// move to stage. Tap staged card = remove from stage.
+// ─────────────────────────────────────────────
 function renderHand() {
-  const c = document.getElementById('handCards');
-  c.innerHTML = '';
+  const container = document.getElementById('handCards');
+  container.innerHTML = '';
   document.getElementById('handCnt').textContent = myHand.length;
+
   myHand.forEach((card, i) => {
-    const isSel    = selectedIdx === i;
-    const isStaged = stagedCards.some(s => s._hi === i);
-    const canTap   = isMyTurn && hasDrawn;
+    const isSelected = selectedIdx === i;
+    const isStaged   = stagedCards.some(s => s._hi === i);
+    const interactive = isMyTurn && hasDrawn && !isStaged;
+
     const el = document.createElement('div');
     el.className = [
       'card',
       `card-${card.color}`,
-      canTap && !isStaged ? 'hov' : '',
-      isSel    ? 'sel'    : '',
-      isStaged ? 'staged' : '',
-      !canTap  ? 'off'    : '',
+      interactive   ? 'hov'    : '',
+      isSelected    ? 'sel'    : '',
+      isStaged      ? 'staged' : '',
+      (!isMyTurn || !hasDrawn) ? 'off' : '',
     ].filter(Boolean).join(' ');
+
     el.innerHTML = `<div class="cem">${card.emoji}</div><div class="cnm">${card.name}</div>`;
-    if (canTap) el.onclick = () => handleCardTap(i);
-    c.appendChild(el);
+
+    if (interactive) {
+      el.onclick = () => handleCardTap(i);
+    } else if (isStaged) {
+      // Staged cards are tappable to remove them
+      el.classList.remove('off');
+      el.onclick = () => {
+        const si = stagedCards.findIndex(s => s._hi === i);
+        if (si !== -1) { stagedCards.splice(si, 1); renderAll(); }
+      };
+    }
+
+    container.appendChild(el);
   });
 }
 
@@ -1036,7 +1114,7 @@ function renderSets() {
     const locked = myLockedSetCards[i]?.length === 3;
     if (locked) {
       slot.className = 'set-slot lk';
-      slot.innerHTML = `<span class="slbl">🔒 SET ${i+1}</span>` +
+      slot.innerHTML = `<span class="slbl">🔒 SET ${i + 1}</span>` +
         myLockedSetCards[i].map(c =>
           `<div class="card card-${c.color} locked-c" style="width:44px;height:62px;">
             <div class="cem" style="font-size:16px;">${c.emoji}</div>
@@ -1044,115 +1122,143 @@ function renderSets() {
           </div>`).join('');
     } else {
       slot.className = 'set-slot';
-      slot.innerHTML = `<span class="slbl">SET ${i+1}</span><div class="plus-hint">+</div>`;
+      slot.innerHTML = `<span class="slbl">SET ${i + 1}</span><div class="plus-hint">+</div>`;
     }
   }
   document.getElementById('lockCnt').textContent = myLockedSets;
 }
 
 function renderStage() {
-  const c     = document.getElementById('stageCards');
-  const empty = document.getElementById('stageEmpty');
-  const stat  = document.getElementById('stageStat');
+  const container = document.getElementById('stageCards');
+  const emptyHint = document.getElementById('stageEmpty');
+  const statEl    = document.getElementById('stageStat');
+
   if (stagedCards.length === 0) {
-    c.innerHTML = ''; empty.style.display = 'block'; stat.textContent = ''; return;
+    container.innerHTML   = '';
+    emptyHint.style.display = 'block';
+    statEl.textContent    = '';
+    return;
   }
-  empty.style.display = 'none';
-  c.innerHTML = stagedCards.map((card, i) =>
-    `<div class="card card-${card.color} staged" style="width:58px;height:82px;" onclick="unstage(${i})">
+
+  emptyHint.style.display = 'none';
+  container.innerHTML = stagedCards.map((card, i) =>
+    `<div class="card card-${card.color} staged" style="width:58px;height:82px;cursor:pointer;" onclick="unstage(${i})">
       <div class="cem" style="font-size:20px;">${card.emoji}</div>
       <div class="cnm" style="font-size:6px;">${card.name}</div>
-    </div>`).join('');
+    </div>`
+  ).join('');
+
   if (stagedCards.length < 3) {
-    stat.textContent  = `${stagedCards.length}/3 — need ${3 - stagedCards.length} more card${stagedCards.length===2?'':'s'}`;
-    stat.style.color  = 'var(--muted)';
+    statEl.textContent = `${stagedCards.length}/3 cards — need ${3 - stagedCards.length} more`;
+    statEl.style.color = 'var(--muted)';
   } else {
     const valid = isValidSet(stagedCards);
-    stat.textContent = valid ? '✅ Valid set! Tap LOCK SET to confirm.' : '❌ Not a valid set — need 3 identical or 3 same-color';
-    stat.style.color = valid ? 'var(--green)' : 'var(--red)';
+    statEl.textContent = valid
+      ? '✅ Valid set! Hit LOCK SET to confirm.'
+      : '❌ Not a valid set — need 3 identical OR 3 same-color consoles';
+    statEl.style.color = valid ? 'var(--green)' : 'var(--red)';
   }
 }
 
 function updateTurnHint() {
   const h = document.getElementById('turnHint');
-  if (isMyTurn) {
-    h.textContent = !hasDrawn
-      ? '👆 Tap the DECK or DISCARD PILE to draw a card first'
-      : '👆 Tap any card once to SELECT it → hit DISCARD   ·   Tap it twice to STAGE it for a set';
-  } else {
+  if (!isMyTurn) {
     const cur = curState?.players[curState?.currentTurn];
     h.textContent = cur ? `⏳ Waiting for ${cur.avatar} ${cur.name}…` : '⏳ Waiting…';
+    return;
+  }
+  if (!hasDrawn) {
+    h.textContent = '👆 Draw a card from the DECK or DISCARD PILE to begin your turn';
+  } else {
+    h.textContent = '👆 Tap a card once to SELECT it → DISCARD to end turn  ·  Tap a selected card again to STAGE it for a set → LOCK SET';
   }
 }
 
 function updateButtons() {
+  // DISCARD: need my turn, already drew, and have a card selected
   const canDiscard = isMyTurn && hasDrawn && selectedIdx !== null;
+  // LOCK SET: need 3 valid staged cards and an open slot
   const canLock    = stagedCards.length === 3 && isValidSet(stagedCards) && myLockedSets < 3;
+
   document.getElementById('discardBtn').disabled  = !canDiscard;
   document.getElementById('lockStBtn').disabled   = !canLock;
   document.getElementById('clearStBtn').disabled  = stagedCards.length === 0;
+
+  // Visual feedback on discard button when ready
+  const db = document.getElementById('discardBtn');
+  if (canDiscard) {
+    db.style.background = 'rgba(255,23,68,.25)';
+    db.style.borderColor = 'rgba(255,23,68,.6)';
+    db.style.color = '#ff4444';
+  } else {
+    db.style.background = '';
+    db.style.borderColor = '';
+    db.style.color = '';
+  }
 }
 
 function updateTableState() {
   const canDraw = isMyTurn && !hasDrawn;
   const dk = document.getElementById('deckCard');
   const dd = document.getElementById('discardTop');
-  canDraw ? (dk.classList.add('pulse'), dk.classList.remove('off'), dd.classList.remove('off'))
-          : (dk.classList.remove('pulse'), dk.classList.add('off'), dd.classList.add('off'));
+  if (canDraw) {
+    dk.classList.add('pulse');    dk.classList.remove('off');
+    dd.classList.remove('off');
+  } else {
+    dk.classList.remove('pulse'); dk.classList.add('off');
+    dd.classList.add('off');
+  }
 }
 
 // ─────────────────────────────────────────────
-// CARD INTERACTIONS
+// CARD TAP HANDLER
+// Tap 1: SELECT card (gold highlight, DISCARD enabled)
+// Tap 2 (same card): STAGE it for set building
+// Tap staged card: REMOVE from stage
 // ─────────────────────────────────────────────
 function handleCardTap(idx) {
   if (!isMyTurn || !hasDrawn) return;
 
-  const alreadyStaged = stagedCards.findIndex(s => s._hi === idx);
-
-  if (alreadyStaged !== -1) {
-    // Tapped a staged card — unstage it
-    stagedCards.splice(alreadyStaged, 1);
-    renderHand(); renderStage(); updateButtons();
-    return;
-  }
-
   if (selectedIdx === idx) {
-    // Tapped the already-selected card a second time — move it to stage
+    // Second tap on same card → move it to stage area
     if (stagedCards.length < 3) {
       stagedCards.push({ ...myHand[idx], _hi: idx });
     }
     selectedIdx = null;
   } else {
-    // Fresh tap on any card — select it for discard (enables Discard button)
+    // First tap → select this card (deselect previous)
     selectedIdx = idx;
   }
 
-  renderHand(); renderStage(); updateButtons();
+  renderAll();
 }
 
-function unstage(i) {
-  stagedCards.splice(i, 1);
-  renderHand(); renderStage(); updateButtons();
+function unstage(stageIdx) {
+  stagedCards.splice(stageIdx, 1);
+  renderAll();
 }
 
 function clearStage() {
-  stagedCards = []; selectedIdx = null;
-  renderHand(); renderStage(); updateButtons();
+  stagedCards = [];
+  selectedIdx = null;
+  renderAll();
 }
 
+// Auto-stage: find best set and stage it for the player
 function autoStage() {
   if (myLockedSets >= 3) return;
-  const pool = myHand.map((c,i) => ({...c, _hi:i}));
+  const pool = myHand.map((c, i) => ({ ...c, _hi: i }));
   const byId = {}, byColor = {};
   pool.forEach(c => {
     (byId[c.id]       = byId[c.id]       || []).push(c);
     (byColor[c.color] = byColor[c.color] || []).push(c);
   });
   for (const group of [...Object.values(byId), ...Object.values(byColor)]) {
-    if (group.length >= 3 && isValidSet(group.slice(0,3))) {
-      stagedCards = group.slice(0,3);
-      renderHand(); renderStage(); updateButtons();
-      notif('✨ Best matching set staged — tap LOCK SET!');
+    if (group.length >= 3 && isValidSet(group.slice(0, 3))) {
+      stagedCards = group.slice(0, 3);
+      selectedIdx = null;
+      renderAll();
+      notif('✨ Complete set staged! Tap LOCK SET to confirm.', 2500);
       return;
     }
   }
@@ -1162,23 +1268,34 @@ function autoStage() {
 // ─────────────────────────────────────────────
 // ACTIONS → SERVER
 // ─────────────────────────────────────────────
-function drawDeck()    { if (!isMyTurn || hasDrawn) return; socket.emit('draw_deck'); }
-function drawDiscard() { if (!isMyTurn || hasDrawn) return; socket.emit('draw_discard'); }
+function drawDeck() {
+  if (!isMyTurn || hasDrawn) return;
+  socket.emit('draw_deck');
+}
+
+function drawDiscard() {
+  if (!isMyTurn || hasDrawn) return;
+  socket.emit('draw_discard');
+}
 
 function discardSelected() {
   if (!isMyTurn || !hasDrawn || selectedIdx === null) return;
-  socket.emit('discard_card', { handIndex: selectedIdx });
+  const idx = selectedIdx;
   selectedIdx = null;
+  socket.emit('discard_card', { handIndex: idx });
 }
 
 function lockStage() {
   if (stagedCards.length !== 3 || !isValidSet(stagedCards) || myLockedSets >= 3) return;
+
+  // Find first open slot
   let slot = -1;
   for (let i = 0; i < 3; i++) {
     if (!myLockedSetCards[i] || myLockedSetCards[i].length === 0) { slot = i; break; }
   }
-  if (slot === -1) return notif('All slots full!');
-  // Strip local helper property before sending
+  if (slot === -1) return notif('All set slots are full!');
+
+  // Strip the local _hi helper before sending to server
   const cards = stagedCards.map(({ _hi, ...c }) => c);
   socket.emit('lock_set', { slotIndex: slot, cards });
 }
