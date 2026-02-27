@@ -921,18 +921,22 @@ socket.on('your_hand', ({ hand, sets, lockedSets, lockedSetCards, hasDrawn: hd }
   mySets           = sets;
   myLockedSets     = lockedSets;
   myLockedSetCards = lockedSetCards;
-  hasDrawn         = hd;
+  hasDrawn         = hd;  // ← this is the authoritative source of truth
 
-  // Clear any staged cards that are no longer in hand
+  // Clear staged cards that are no longer in hand
   stagedCards = stagedCards.filter(sc =>
     myHand.some(c => c.id === sc.id && c.color === sc.color)
   );
-  // Clear selected index — hand may have changed
+  // Reset discard selection since hand changed
   selectedIdx = null;
 
-  // Auto-detect and highlight any complete sets in hand
+  // Auto-detect complete sets now that hand is updated
   autoDetectSets();
 
+  // Always update table state and hint here — this is what actually
+  // unlocks the cards after a draw since hasDrawn just became true
+  updateTableState();
+  updateTurnHint();
   renderAll();
 });
 
@@ -947,11 +951,14 @@ socket.on('set_locked', ({ slotIndex, lockedSets }) => {
 
 socket.on('timer_start', ({ seconds, playerId }) => {
   isMyTurn = (playerId === myId);
+  // Note: hasDrawn is managed only by your_hand events.
+  // timer_start fires at turn-start AND after drawing — in both cases
+  // your_hand arrives right after and does the definitive renderAll().
+  // We just update the timer and table visual here.
   startTimerUI(seconds);
+  updateTableState();
   updateTurnHint();
   updateButtons();
-  updateTableState();
-  renderHand(); // re-render so cards go active/inactive correctly
 });
 
 socket.on('card_drawn', ({ card, source }) => {
@@ -970,19 +977,18 @@ function autoDetectSets() {
   if (!isMyTurn || myLockedSets >= 3) return;
   if (stagedCards.length > 0) return; // don't override if player already staging
 
-  const pool = myHand.map((c, i) => ({ ...c, _hi: i }));
   const byId    = {};
   const byColor = {};
 
-  pool.forEach(c => {
+  myHand.forEach(c => {
     (byId[c.id]       = byId[c.id]       || []).push(c);
     (byColor[c.color] = byColor[c.color] || []).push(c);
   });
 
-  // Try identical first, then same-color
+  // Try identical first, then same-color — store by card identity (no _hi)
   for (const group of [...Object.values(byId), ...Object.values(byColor)]) {
     if (group.length >= 3 && isValidSet(group.slice(0, 3))) {
-      stagedCards = group.slice(0, 3);
+      stagedCards = group.slice(0, 3).map(c => ({ ...c }));
       notif('✅ Complete set detected in your hand! Tap LOCK SET to confirm.', 3000);
       return;
     }
@@ -1076,31 +1082,40 @@ function renderHand() {
   container.innerHTML = '';
   document.getElementById('handCnt').textContent = myHand.length;
 
+  // Rebuild staged index map fresh against current hand using card identity
+  // (not stale _hi indexes which break after draws)
+  const stagedIdxSet = new Set();
+  stagedCards.forEach(sc => {
+    const actualIdx = myHand.findIndex((c, idx) => c.id === sc.id && c.color === sc.color && !stagedIdxSet.has(idx));
+    if (actualIdx !== -1) stagedIdxSet.add(actualIdx);
+  });
+
   myHand.forEach((card, i) => {
-    const isSelected = selectedIdx === i;
-    const isStaged   = stagedCards.some(s => s._hi === i);
-    const interactive = isMyTurn && hasDrawn && !isStaged;
+    const isSelected  = selectedIdx === i;
+    const isStaged    = stagedIdxSet.has(i);
+    const interactive = isMyTurn && hasDrawn; // ALL cards are interactive after drawing
 
     const el = document.createElement('div');
     el.className = [
       'card',
       `card-${card.color}`,
-      interactive   ? 'hov'    : '',
-      isSelected    ? 'sel'    : '',
-      isStaged      ? 'staged' : '',
-      (!isMyTurn || !hasDrawn) ? 'off' : '',
+      interactive && !isStaged ? 'hov' : '',
+      isSelected  ? 'sel'    : '',
+      isStaged    ? 'staged' : '',
+      !interactive ? 'off'   : '',
     ].filter(Boolean).join(' ');
 
     el.innerHTML = `<div class="cem">${card.emoji}</div><div class="cnm">${card.name}</div>`;
 
     if (interactive) {
-      el.onclick = () => handleCardTap(i);
-    } else if (isStaged) {
-      // Staged cards are tappable to remove them
-      el.classList.remove('off');
       el.onclick = () => {
-        const si = stagedCards.findIndex(s => s._hi === i);
-        if (si !== -1) { stagedCards.splice(si, 1); renderAll(); }
+        if (isStaged) {
+          // Unstage: remove from stagedCards by card identity
+          const si = stagedCards.findIndex(s => s.id === card.id && s.color === card.color);
+          if (si !== -1) { stagedCards.splice(si, 1); renderAll(); }
+        } else {
+          handleCardTap(i);
+        }
       };
     }
 
@@ -1220,13 +1235,14 @@ function handleCardTap(idx) {
   if (!isMyTurn || !hasDrawn) return;
 
   if (selectedIdx === idx) {
-    // Second tap on same card → move it to stage area
+    // Second tap on same card → stage it for set building
     if (stagedCards.length < 3) {
-      stagedCards.push({ ...myHand[idx], _hi: idx });
+      // Store card by identity (id+color), not by index
+      stagedCards.push({ ...myHand[idx] });
     }
     selectedIdx = null;
   } else {
-    // First tap → select this card (deselect previous)
+    // First tap → select this card (DISCARD button now enabled)
     selectedIdx = idx;
   }
 
@@ -1247,15 +1263,14 @@ function clearStage() {
 // Auto-stage: find best set and stage it for the player
 function autoStage() {
   if (myLockedSets >= 3) return;
-  const pool = myHand.map((c, i) => ({ ...c, _hi: i }));
   const byId = {}, byColor = {};
-  pool.forEach(c => {
+  myHand.forEach(c => {
     (byId[c.id]       = byId[c.id]       || []).push(c);
     (byColor[c.color] = byColor[c.color] || []).push(c);
   });
   for (const group of [...Object.values(byId), ...Object.values(byColor)]) {
     if (group.length >= 3 && isValidSet(group.slice(0, 3))) {
-      stagedCards = group.slice(0, 3);
+      stagedCards = group.slice(0, 3).map(c => ({ ...c }));
       selectedIdx = null;
       renderAll();
       notif('✨ Complete set staged! Tap LOCK SET to confirm.', 2500);
@@ -1295,9 +1310,8 @@ function lockStage() {
   }
   if (slot === -1) return notif('All set slots are full!');
 
-  // Strip the local _hi helper before sending to server
-  const cards = stagedCards.map(({ _hi, ...c }) => c);
-  socket.emit('lock_set', { slotIndex: slot, cards });
+  // Cards already clean (no _hi since we removed that)
+  socket.emit('lock_set', { slotIndex: slot, cards: stagedCards });
 }
 
 // ─────────────────────────────────────────────
